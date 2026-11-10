@@ -37,9 +37,18 @@ CFG
   case "$code" in 2*) return 0 ;; *) echo "envoi WAHA refusé : HTTP $code" >&2; return 1 ;; esac
 }
 
-now=$(date '+%Y-%m-%d %H:%M %Z')
+now=$(date '+%d/%m/%Y %H:%M %Z')
+icon() { case "$1" in disk) printf '💾' ;; swap) printf '🧠' ;; container:*) printf '🐳' ;; *) printf '•' ;; esac; }
+label() { case "$1" in disk) printf 'Disque %s' "$DISK_PATH" ;; swap) printf 'Swap' ;; container:*) printf 'Conteneur %s' "${1#container:}" ;; *) printf '%s' "$1" ;; esac; }
 if [ "$MODE" = test ]; then
-  send "[vps-health] ${HOST_LABEL} : message de test ${now}. Seuils : disque >= ${DISK_PCT_MAX} %, swap >= ${SWAP_MB_MAX} Mo, conteneurs arrêtés/unhealthy."
+  send "🩺 *vps-health* · ${HOST_LABEL}
+✅ Message de test
+🕒 ${now}
+
+Seuils surveillés :
+💾 Disque ≥ ${DISK_PCT_MAX} %
+🧠 Swap ≥ ${SWAP_MB_MAX} Mo
+🐳 Conteneurs arrêtés ou unhealthy"
   echo "message de test envoyé"; exit 0
 fi
 
@@ -70,9 +79,9 @@ fi
 
 # --- état courant : une clé par incident (sans la valeur, pour ne pas renvoyer à chaque variation) ---
 declare -A detail=()
-[ "$disk_pct" -ge "$DISK_PCT_MAX" ] && detail[disk]="disque ${DISK_PATH} à ${disk_pct} % (${disk_free} libres)"
-[ "$swap_mb" -ge "$SWAP_MB_MAX" ] && detail[swap]="swap utilisé ${swap_mb} Mo"
-for c in "${!bad_containers[@]}"; do detail["container:$c"]="conteneur ${c} ${bad_containers[$c]}"; done
+[ "$disk_pct" -ge "$DISK_PCT_MAX" ] && detail[disk]="${disk_pct} % utilisés (${disk_free} libres, seuil ${DISK_PCT_MAX} %)"
+[ "$swap_mb" -ge "$SWAP_MB_MAX" ] && detail[swap]="${swap_mb} Mo utilisés (seuil ${SWAP_MB_MAX} Mo)"
+for c in "${!bad_containers[@]}"; do detail["container:$c"]="${bad_containers[$c]}"; done
 current=""; [ "${#detail[@]}" -gt 0 ] && current=$(printf '%s\n' "${!detail[@]}" | sort)
 previous=""; [ -f "$STATE_FILE" ] && previous=$(sort "$STATE_FILE")
 new=$(comm -13 <(printf '%s\n' "$previous") <(printf '%s\n' "$current") | sed '/^$/d')
@@ -80,18 +89,22 @@ resolved=$(comm -23 <(printf '%s\n' "$previous") <(printf '%s\n' "$current") | s
 
 if [ -z "$new" ] && [ -z "$resolved" ]; then echo "aucun changement (alertes actives : $(printf '%s' "${current:-aucune}" | tr '
 ' ' ')"; exit 0; fi
-msg=""
+if [ -n "$new" ]; then msg="🚨 *ALERTE* · ${HOST_LABEL}"; else msg="✅ *Retour à la normale* · ${HOST_LABEL}"; fi
+msg+=$'\n'"🕒 ${now}"
 if [ -n "$new" ]; then
-  msg="[vps-health] ALERTE ${HOST_LABEL} ${now}"
-  while read -r k; do [ -n "$k" ] && msg+=$'\n'"- ${detail[$k]}"; done <<<"$new"
+  msg+=$'\n\n'"Nouveau :"
+  while read -r k; do [ -n "$k" ] && msg+=$'\n'"$(icon "$k") $(label "$k") : ${detail[$k]}"; done <<<"$new"
 fi
 if [ -n "$resolved" ]; then
-  [ -n "$msg" ] && msg+=$'\n'
-  msg+="[vps-health] Retour à la normale ${HOST_LABEL} ${now}"
-  while read -r k; do [ -n "$k" ] && msg+=$'\n'"- ${k} résolu"; done <<<"$resolved"
+  msg+=$'\n\n'"Résolu :"
+  while read -r k; do [ -n "$k" ] && msg+=$'\n'"$(icon "$k") $(label "$k") ✔"; done <<<"$resolved"
 fi
-[ -n "$current" ] && msg+=$'\n'"Toujours actif : $(printf '%s' "$current" | tr '\n' ' ')"
-[ -n "$SIM" ] && msg+=$'\n'"(simulation, pas une mesure réelle)"
+still=$(comm -12 <(printf '%s\n' "$previous") <(printf '%s\n' "$current") | sed '/^$/d')
+if [ -n "$still" ]; then
+  msg+=$'\n\n'"Toujours en cours :"
+  while read -r k; do [ -n "$k" ] && msg+=$'\n'"$(icon "$k") $(label "$k") : ${detail[$k]}"; done <<<"$still"
+fi
+[ -n "$SIM" ] && msg+=$'\n\n'"_(simulation, pas une mesure réelle)_"
 send "$msg"
 tmp=$(mktemp "${STATE_FILE}.XXXXXX"); printf '%s\n' "$current" | sed '/^$/d' >"$tmp"; mv -f "$tmp" "$STATE_FILE"
 echo "notification envoyée ; nouvelles : $(printf '%s' "$new" | tr '\n' ' ') ; résolues : $(printf '%s' "$resolved" | tr '\n' ' ')"
