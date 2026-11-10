@@ -87,8 +87,7 @@ previous=""; [ -f "$STATE_FILE" ] && previous=$(sort "$STATE_FILE")
 new=$(comm -13 <(printf '%s\n' "$previous") <(printf '%s\n' "$current") | sed '/^$/d')
 resolved=$(comm -23 <(printf '%s\n' "$previous") <(printf '%s\n' "$current") | sed '/^$/d')
 
-if [ -z "$new" ] && [ -z "$resolved" ]; then echo "aucun changement (alertes actives : $(printf '%s' "${current:-aucune}" | tr '
-' ' ')"; exit 0; fi
+if [ -z "$new" ] && [ -z "$resolved" ]; then echo "aucun changement (alertes actives : $(printf '%s' "${current:-aucune}" | tr '\n' ' '))"; exit 0; fi
 if [ -n "$new" ]; then msg="🚨 *ALERTE* · ${HOST_LABEL}"; else msg="✅ *Retour à la normale* · ${HOST_LABEL}"; fi
 msg+=$'\n'"🕒 ${now}"
 if [ -n "$new" ]; then
