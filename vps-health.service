@@ -1,0 +1,17 @@
+[Unit]
+Description=vps-health: disk/swap/container check with WhatsApp alert
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vps-health/check.sh
+Nice=10
+MemoryMax=64M
+CPUQuota=20%
+TimeoutStartSec=120
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/vps-health
+ProtectHome=yes
